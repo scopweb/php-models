@@ -19,6 +19,9 @@ namespace Models;
 class Model {
     public static $db;
     public static $app;
+    
+    //SCP
+    public static $driver; 
 
     /**
      * Store registered models globaly
@@ -86,8 +89,13 @@ class Model {
         return self::query_row("SELECT * FROM `$table` WHERE $filter_str", $binds);
     }
 
-    public static function connect($host, $database, $username, $password) {
-        $db = new \Models\DB($host, $database, $username, $password);
+    public static function connect($host, $database, $username, $password, $port = '3306', $driver = 'mysql') {
+        //$db = new \Models\DB($host, $database, $username, $password);
+       
+        //SCP
+        $db = new \Models\DB($host, $database, $username, $password, $port, $driver);
+        self::$driver = $driver;
+        
         self::set_db($db);
     }
 
@@ -178,7 +186,15 @@ class Model {
             $active_field = self::get_field('active') ? "active = 1" : "";
 
             $filters_str = self::create_filter($filters, $binds);
-            $data = self::query("SELECT $field FROM `$table` WHERE $active_field $filters_str", $binds);
+            
+            //scp
+            if( self::$driver == 'mssql'){
+                $data = self::query("SELECT $field FROM [$table] WHERE $active_field $filters_str", $binds);
+            }else{
+                $data = self::query("SELECT $field FROM `$table` WHERE $active_field $filters_str", $binds);
+            }
+            
+            //$data = self::query("SELECT $field FROM `$table` WHERE $active_field $filters_str", $binds);
         }
 
         if (!$data) return [];
@@ -316,7 +332,11 @@ class Model {
                 $table = isset($field_info[1]) ? $field_info[0].'.' : '';
                 $field_name = $field_info[1] ?? $field_info[0];
 
-                $filters[] = $table."`$field_name` = :$bind_key";
+                //$filters[] = $table."`$field_name` = :$bind_key";
+                
+                //SCP
+                $filters[] = (self::$driver == 'mssql')? $table."[$field_name] = :$bind_key" : $table."`$field_name` = :$bind_key" ; 
+                
                 $binds[$bind_key] = $value;
             }
         }
@@ -353,8 +373,16 @@ class Model {
         }
 
         $updated = self::$db->update($table, $data, "$pk = :pk", [':pk' => $this->{$pk}]);
+        /*
         if ($updated) {
             self::$db->query_row("SELECT * FROM `$table` WHERE $pk = :pk", [':pk' => $this->{$pk}], $this, \PDO::FETCH_INTO);
+        }
+        */
+        //SCP
+        if( self::$driver == 'mssql') {
+            self::$db->query_row("SELECT * FROM `$table` WHERE $pk = :pk", [':pk' => $this->{$pk}], $this, \PDO::FETCH_INTO);
+        }else{
+            self::$db->query_row("SELECT * FROM [$table] WHERE $pk = :pk", [':pk' => $this->{$pk}], $this, \PDO::FETCH_INTO); 
         }
 
         return $updated;
