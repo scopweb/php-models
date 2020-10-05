@@ -18,7 +18,8 @@ $ composer require scopweb/php-models
 The main `\Models\DB` class is a PDO wrapper used to make CRUD much easier. It is a forked code from the [php-pdo-wrapper-class](https://github.com/lonalore/php-pdo-wrapper-class)
 ```php
 // connect to your database. Store the $db instance globally -- you only need to connect to your db ONCE!
-$db = new \Models\DB(DB_HOST, DB_NAME, DB_USER, DB_PASSWORD);
+// driver add support for 'mssql'
+$db = new \Models\DB(DB_HOST, DB_NAME, DB_USER, DB_PASSWORD, DB_PORT, DB_DRIVER);
 ```
 
 Available **CRUD** methods
@@ -41,7 +42,7 @@ The `\Models\Model` class is a parent class that can be inherited to a **Model**
 
 1. Initiate the `\Models\DB` instance (see above)
 ```php
-$db = new \Models\DB(DB_HOST, DB_NAME, DB_USER, DB_PASSWORD);
+$db = new \Models\DB(DB_HOST, DB_NAME, DB_USER, DB_PASSWORD, DB_PORT, DB_DRIVER);
 \Models\Model::set_db($db);
 ```
 
