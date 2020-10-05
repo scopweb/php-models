@@ -10,7 +10,7 @@ A PHP library that allows you to easily create and define your models using PDO
 
 ## Installation
 ```term
-$ composer require lodev09/php-models
+$ composer require scopweb/php-models
 ```
 
 ## Usage
