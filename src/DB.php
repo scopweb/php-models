@@ -23,6 +23,12 @@
  * - PDO Extension
  * - Appropriate PDO Driver(s) - PDO_SQLITE, PDO_MYSQL, PDO_PGSQL
  * - Only MySQL, SQLite, and PostgreSQL database types are currently supported.
+ *
+ *
+ * This is a forked code from lodev09/php-models
+ * Add support for mssql with dns connection
+ *
+ * System Requirements:
  */
 
 namespace Models;
@@ -42,6 +48,11 @@ class DB extends \PDO {
     private $_database;
     private $_username;
     private $_password;
+    
+    // SCP
+    private $_drivers; 
+    private $_table; 
+
 
     /**
     * Class constructor.
@@ -53,6 +64,7 @@ class DB extends \PDO {
     *  - MySQL - http://us3.php.net/manual/en/ref.pdo-mysql.connection.php
     *  - SQLite - http://us3.php.net/manual/en/ref.pdo-sqlite.connection.php
     *  - PostreSQL - http://us3.php.net/manual/en/ref.pdo-pgsql.connection.php
+    *  - MSSQL - https://www.php.net/manual/es/ref.pdo-sqlsrv.php
     *
     * @param string $user
     *  Username for database connection.
@@ -81,12 +93,20 @@ class DB extends \PDO {
         $this->_database = $database;
         $this->_username = $username;
         $this->_password = $password;
-
+               
+        //SCP
+        $this->_drivers  = $driver;
+        
+        //SCP ADD MSSQL DRIVER CASE
         try {
             switch ($driver) {
                 case 'mysql':
                     $dsn = "mysql:host=$host;port=$port;dbname=$database;charset=utf8";
                     break;
+                case 'mssql': 
+                    //$dsn = "sqlsrv:Server=$host;Database=$database;charset=utf8";
+                    $dsn ="odbc:Driver={SQL Server};Server=$host;Database=$database;charset=utf8";                   
+                    break;     
             }
 
             parent::__construct($dsn, $username, $password, $options);
@@ -118,8 +138,20 @@ class DB extends \PDO {
             return $this->run($sql, $info);
         } else {
             $table = $this->_prefix.$sql;
+               
+            //SCP
+            $this->_table = $table;  //SCP save the table name  
+            
             $fields = $this->get_fields($table, array_keys($info));
-            $sql = "INSERT INTO $table (`".implode("`, `", $fields)."`) ";
+            
+            //SCP
+            if( $this->_drivers == 'mssql' ){
+                 $sql = "INSERT INTO $table ([".implode("], [", $fields)."]) ";
+            }else{
+                 $sql = "INSERT INTO $table (`".implode("`, `", $fields)."`) ";
+            }
+            
+            //$sql = "INSERT INTO $table (`".implode("`, `", $fields)."`) ";
             $sql .= "VALUES (:".implode(", :", $fields).");";
 
             $bind = [];
@@ -162,15 +194,39 @@ class DB extends \PDO {
             return $this->run($sql_or_table, $info);
         } else if (is_array($info)) {
             $sql_or_table = $this->_prefix . $sql_or_table;
+            
+            //SCP
+            $this->_table = $sql_or_table;  //SCP save the table name 
+            
             $fields = $this->get_fields($sql_or_table, array_keys($info));
             $fieldSize = sizeof($fields);
             $sql = "UPDATE $sql_or_table SET ";
+            
+            //SCP
+            if( $this->_drivers == 'mssql'){ 
+                for ($f = 0; $f < $fieldSize; ++$f) {
+                    if ($f > 0) {
+                        $sql .= ', ';
+                    }
+                    $sql .= '`'.$fields[$f].'` = :update_'.$fields[$f];
+                }
+            }else{
+                for ($f = 0; $f < $fieldSize; ++$f) {
+                    if ($f > 0) {
+                        $sql .= ', ';
+                    }
+                    $sql .= '['.$fields[$f].'] = :update_'.$fields[$f];
+                }
+            }
+            
+            /*
             for ($f = 0; $f < $fieldSize; ++$f) {
                 if ($f > 0) {
                     $sql .= ', ';
                 }
                 $sql .= '`'.$fields[$f].'` = :update_'.$fields[$f];
             }
+            */
 
             if ($where) {
                 $sql .= " WHERE $where;";
@@ -292,6 +348,10 @@ class DB extends \PDO {
                 if ($this->sql_is($this->_sql, ['delete', 'update'])) {
                     return $pdostmt->rowCount();
                 } elseif ($this->sql_is($this->_sql, 'insert')) {
+                    
+                    //SCP alternative to lastInsertId
+                    return ( $this->_drivers == 'mssql' )? self::lastId($this->_table) : $this->lastInsertId(); 
+                    
                     return $this->lastInsertId();
                 } else {
                     if (isset($args)) {
@@ -308,6 +368,24 @@ class DB extends \PDO {
         }
 
         return false;
+    }
+    
+    
+    /**
+    * The alternative last id in mssql driver ( SCP )
+    *
+    * @param string $table
+    *  name of table.
+    *
+    *
+    * @return int
+    *  last id
+    */
+    public function lastId( $table ) {
+
+        $sql  = "SELECT IDENT_CURRENT('$table') as lastid";
+        $result = self::query_row( $sql );
+        return $result->lastid;
     }
 
     /**
@@ -452,24 +530,73 @@ class DB extends \PDO {
         $table = $this->_prefix . $table;
         $driver = $this->getAttribute(\PDO::ATTR_DRIVER_NAME);
         $fields = [];
+        
+        // SCP
+        if( $this->_drivers == 'mssql' ){
+           
+            $sql = "SELECT DISTINCT
+                sys.columns.name AS name,
+                sys.types.name AS type,
+                (   SELECT 
+                        COUNT(column_name)
+                    FROM 
+                        INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE 
+                    WHERE
+                        TABLE_NAME = sys.tables.name AND
+                        CONSTRAINT_NAME =
+                            (   SELECT
+                                constraint_name
+                                FROM 
+                                    INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+                                WHERE
+                                    TABLE_NAME = sys.tables.name AND                    
+                                    constraint_type = 'PRIMARY KEY' AND
+                                    COLUMN_NAME = sys.columns.name
+                            )
+                ) AS pk
+            FROM 
+                sys.columns, sys.types, sys.tables 
+            WHERE
+                sys.tables.object_id = sys.columns.object_id AND
+                sys.types.system_type_id = sys.columns.system_type_id AND
+                sys.types.user_type_id = sys.columns.user_type_id AND
+                sys.tables.name = '$table'";
 
-        if ($driver == 'sqlite') {
-            $sql = "PRAGMA table_info('$table');";
-        } else {
-            $sql = "SELECT column_name AS name, data_type AS type, IF(column_key = 'PRI', 1, 0) AS pk FROM information_schema.columns ";
-            $sql .= "WHERE table_name = '$table' AND table_schema = '$this->_database';";
-        }
 
-        if ($data = $this->run($sql)) {
-            foreach ($data as $column_info) {
-                $field_info = [
-                    'type' => $this->_map_type($column_info->type),
-                    'primary' => !empty($column_info->pk)
-                ];
+            if ($data = $this->run($sql)) {
+                foreach ($data as $column_info) {
+                    $field_info = [
+                        'type' => $this->_map_type($column_info->type),
+                        'primary' => !empty($column_info->pk)
+                    ];
 
-                $fields[$column_info->name] = $field_info;
+                    $fields[$column_info->name] = $field_info;
+                }
             }
-        }
+
+        // END SCP */    
+        }else{
+
+
+            if ($driver == 'sqlite') {
+                $sql = "PRAGMA table_info('$table');";
+            } else {
+                $sql = "SELECT column_name AS name, data_type AS type, IF(column_key = 'PRI', 1, 0) AS pk FROM information_schema.columns ";
+                $sql .= "WHERE table_name = '$table' AND table_schema = '$this->_database';";
+            }
+
+            if ($data = $this->run($sql)) {
+                foreach ($data as $column_info) {
+                    $field_info = [
+                        'type' => $this->_map_type($column_info->type),
+                        'primary' => !empty($column_info->pk)
+                    ];
+
+                    $fields[$column_info->name] = $field_info;
+                }
+            }
+
+        } 
 
         return $fields;
     }
