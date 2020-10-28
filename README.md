@@ -18,7 +18,7 @@ $ composer require scopweb/php-models
 The main `\Models\DB` class is a PDO wrapper used to make CRUD much easier. It is a forked code from the [php-pdo-wrapper-class](https://github.com/lonalore/php-pdo-wrapper-class)
 ```php
 // connect to your database. Store the $db instance globally -- you only need to connect to your db ONCE!
-// driver add support for 'mssql'
+// driver add support for 'mssql' with extension sqlsrv [https://www.microsoft.com/en-us/download/details.aspx?id=20098]
 $db = new \Models\DB(DB_HOST, DB_NAME, DB_USER, DB_PASSWORD, DB_PORT, DB_DRIVER);
 ```
 
